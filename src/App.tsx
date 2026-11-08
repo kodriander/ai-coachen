@@ -12,6 +12,7 @@ import Kvall from "./screens/Kvall";
 import Test from "./screens/Test";
 import Resultat from "./screens/Resultat";
 import Inst from "./screens/Inst";
+import "./openrouter"; // läser inloggningskoden innan adressen städas
 
 // Körs en gång när appen laddas, så att data från iOS-genvägen sparas direkt.
 const healthImported = importHealthFromUrl();

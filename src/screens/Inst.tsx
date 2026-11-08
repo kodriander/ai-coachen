@@ -1,4 +1,5 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { pendingLogin as openRouterLogin, startOpenRouterLogin } from "../openrouter";
 import { MODELS } from "../ai";
 import { type AppState, getState, replaceState, resetAll, setState, useApp } from "../store";
 import { Icon, type Go } from "../ui";
@@ -10,6 +11,16 @@ export default function Inst({ go }: { go: Go }) {
   const [showGuide, setShowGuide] = useState(false);
   const [copied, setCopied] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
+  const [orBusy, setOrBusy] = useState(!!openRouterLogin);
+  const [orError, setOrError] = useState<string | null>(null);
+  const viaOR = s.settings.provider === "openrouter" && !!s.settings.apiKey;
+  useEffect(() => {
+    if (!openRouterLogin) return;
+    openRouterLogin
+      .then(() => go("idag"))
+      .catch((e: Error) => setOrError(e.message))
+      .finally(() => setOrBusy(false));
+  }, []);
   const appUrl = window.location.origin + window.location.pathname;
   const template = `${appUrl}?steps=[STEG]&weight=[VIKT]&kcal=[AKTIVA KCAL]`;
 
@@ -39,6 +50,7 @@ export default function Inst({ go }: { go: Go }) {
 
   function saveKey() {
     sett("apiKey", key.trim());
+    sett("provider", "anthropic");
     if (firstRun && key.trim()) go("idag");
   }
 
@@ -48,13 +60,29 @@ export default function Inst({ go }: { go: Go }) {
         {!firstRun && <button type="button" className="icon-btn glass" aria-label="Tillbaka" onClick={() => go("idag")}><Icon.back /></button>}
         <h1 style={{ margin: 0, fontSize: 24 }}>{firstRun ? "Kom igång" : "Inställningar"}</h1>
       </div>
-      {firstRun && <p className="lead">Lägg in din Claude API-nyckel och lite om dig. Allt sparas bara i den här webbläsaren.</p>}
+      {firstRun && <p className="lead">Logga in så att coachen kan svara, och berätta lite om dig. Allt sparas bara i den här webbläsaren.</p>}
 
-      <div className="small muted" style={{ margin: "22px 8px 6px" }}>Coachen</div>
-      <div className="glass list" style={{ borderRadius: 28 }}>
-        <label className="row">API-nyckel
-          <input className="field" type="password" autoComplete="off" value={key} placeholder="sk-ant-…" onChange={(e) => setKey(e.target.value)} onBlur={() => !firstRun && sett("apiKey", key.trim())} style={{ width: 170 }} />
-        </label>
+      <div className="small muted" style={{ margin: "22px 8px 6px" }}>Koppla in coachen</div>
+      {viaOR ? (
+        <div className="glass card" style={{ marginTop: 0, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+          <span style={{ fontSize: 15 }}>Inloggad med OpenRouter</span>
+          <button type="button" className="btn ghost sm" onClick={() => { setState((st) => ({ ...st, settings: { ...st.settings, apiKey: "", provider: "anthropic" } })); setKey(""); }}>Logga ut</button>
+        </div>
+      ) : (
+        <div className="glass card" style={{ marginTop: 0 }}>
+          <button type="button" className="btn" disabled={orBusy} onClick={() => { setOrError(null); startOpenRouterLogin().catch(() => setOrError("Det gick inte att starta inloggningen.")); }}>
+            {orBusy ? "Loggar in …" : "Logga in med OpenRouter"}
+          </button>
+          <p className="small muted" style={{ margin: "10px 4px 0", lineHeight: 1.5 }}>Enklast. Logga in med Google eller mejl och fyll på några dollar. En vecka med coachen kostar ungefär en kaffe.</p>
+          {orError && <div className="error">{orError}</div>}
+        </div>
+      )}
+      <div className="glass list mt14" style={{ borderRadius: 28 }}>
+        {!viaOR && (
+          <label className="row">Egen Claude-nyckel
+            <input className="field" type="password" autoComplete="off" value={key} placeholder="sk-ant-…" onChange={(e) => setKey(e.target.value)} onBlur={() => { if (!firstRun) { sett("apiKey", key.trim()); sett("provider", "anthropic"); } }} style={{ width: 150 }} />
+          </label>
+        )}
         <label className="row">Modell
           <select className="field" value={s.settings.model} onChange={(e) => sett("model", e.target.value)}>
             {MODELS.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
@@ -67,9 +95,9 @@ export default function Inst({ go }: { go: Go }) {
           <span style={{ display: "flex", alignItems: "baseline", gap: 4 }}><input className="field" inputMode="decimal" value={String(s.settings.benchTestKg).replace(".", ",")} onChange={(e) => { const n = numOrNull(e.target.value); if (n != null) sett("benchTestKg", n); }} style={{ width: 60 }} /><span className="small muted">kg</span></span>
         </label>
       </div>
-      <p className="small muted" style={{ margin: "8px 8px 0", lineHeight: 1.5 }}>
-        Skapa en nyckel på <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noreferrer">platform.claude.com</a>. Du betalar själv för det du använder. Opus 5.5 ger bäst coachning, Haiku 5.5 är billigast.
-      </p>
+      {!viaOR && <p className="small muted" style={{ margin: "8px 8px 0", lineHeight: 1.5 }}>
+        Har du redan ett konto hos Claude? Skapa en nyckel på <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noreferrer">platform.claude.com</a>. Du betalar själv för det du använder. Opus 5.5 ger bäst coachning, Haiku 5.5 är billigast.
+      </p>}
 
       <div className="small muted" style={{ margin: "22px 8px 6px" }}>Du</div>
       <div className="glass list" style={{ borderRadius: 28 }}>
@@ -128,9 +156,9 @@ export default function Inst({ go }: { go: Go }) {
         </>
       )}
 
-      <p className="small muted" style={{ margin: "16px 8px 0", lineHeight: 1.5 }}>Nyckeln och all data sparas bara i den här webbläsaren och skickas bara till Claude. Det här är inte medicinsk rådgivning. Värm alltid upp och lyssna på kroppen.</p>
+      <p className="small muted" style={{ margin: "16px 8px 0", lineHeight: 1.5 }}>Nyckeln och all data sparas bara i den här webbläsaren och skickas bara till Claude (via OpenRouter om du loggat in där). Det här är inte medicinsk rådgivning. Värm alltid upp och lyssna på kroppen.</p>
 
-      {firstRun && (
+      {firstRun && key.trim() && (
         <div className="dock">
           <button type="button" className="btn" disabled={!key.trim()} onClick={saveKey}>Spara och börja</button>
         </div>

@@ -102,6 +102,8 @@ export interface Profile {
 
 export interface Settings {
   apiKey: string;
+  /** Var nyckeln kommer ifrån: egen Claude-nyckel eller inloggning via OpenRouter. */
+  provider: "anthropic" | "openrouter";
   model: string;
   startDate: string;
   benchTestKg: number;
@@ -125,7 +127,7 @@ export function todayISO(d = new Date()): string {
 function initial(): AppState {
   return {
     v: 1,
-    settings: { apiKey: "", model: "claude-opus-5-5", startDate: todayISO(), benchTestKg: 50 },
+    settings: { apiKey: "", provider: "anthropic", model: "claude-opus-5-5", startDate: todayISO(), benchTestKg: 50 },
     profile: { age: null, heightCm: null, weightKg: null, goal: "Mer styrka", training: "Gym, fria vikter och maskiner", notes: "" },
     days: {},
     tests: {},
@@ -137,7 +139,7 @@ function load(): AppState {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as AppState;
-      if (parsed && parsed.v === 1) return { ...initial(), ...parsed };
+      if (parsed && parsed.v === 1) { const base = initial(); return { ...base, ...parsed, settings: { ...base.settings, ...parsed.settings } }; }
     }
   } catch {
     /* tom eller blockerad lagring: börja om */

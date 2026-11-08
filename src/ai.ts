@@ -13,6 +13,7 @@ import {
   todayISO,
   workoutVolume,
 } from "./store";
+import { openRouterModel } from "./openrouter";
 
 export const MODELS = [
   { id: "claude-opus-5-5", name: "Claude Opus 5.5" },
@@ -39,6 +40,7 @@ async function ask<T extends z.ZodType>(
   effort: "low" | "medium" | "high" = "medium",
 ): Promise<z.infer<T>> {
   const model = s.settings.model || "claude-opus-5-5";
+  if (s.settings.provider === "openrouter") return askOpenRouter(s, schema, content, model);
   // Haiku har ingen fallback på servern; övriga modeller får fallback om en förfrågan nekas.
   const withFallback = !model.startsWith("claude-haiku");
   try {
@@ -58,6 +60,56 @@ async function ask<T extends z.ZodType>(
     if (e instanceof Anthropic.RateLimitError) throw new Error("För många förfrågningar just nu. Vänta en minut och försök igen.");
     if (e instanceof Anthropic.APIConnectionError) throw new Error("Ingen kontakt med Claude. Kolla internet och försök igen.");
     throw e;
+  }
+}
+
+// Samma förfrågan via OpenRouter (OpenAI-formatet), för den som loggat in där.
+async function askOpenRouter<T extends z.ZodType>(
+  s: AppState,
+  schema: T,
+  content: Anthropic.Beta.Messages.BetaContentBlockParam[] | string,
+  model: string,
+): Promise<z.infer<T>> {
+  if (!s.settings.apiKey) throw new Error("Logga in under Inställningar först.");
+  const parts =
+    typeof content === "string"
+      ? content
+      : content.map((b) =>
+          b.type === "image" && b.source.type === "base64"
+            ? { type: "image_url", image_url: { url: `data:${b.source.media_type};base64,${b.source.data}` } }
+            : { type: "text", text: b.type === "text" ? b.text : "" },
+        );
+  const { $schema: _drop, ...jsonSchema } = z.toJSONSchema(schema, { target: "draft-7" }) as Record<string, unknown>;
+  let res: Response;
+  try {
+    res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${s.settings.apiKey}`, "Content-Type": "application/json", "X-Title": "AI-coachen" },
+      body: JSON.stringify({
+        model: openRouterModel(model),
+        max_tokens: 16000,
+        messages: [
+          { role: "system", content: SYSTEM },
+          { role: "user", content: parts },
+        ],
+        response_format: { type: "json_schema", json_schema: { name: "svar", strict: true, schema: jsonSchema } },
+      }),
+    });
+  } catch {
+    throw new Error("Ingen kontakt med OpenRouter. Kolla internet och försök igen.");
+  }
+  if (res.status === 401) throw new Error("Inloggningen har gått ut. Logga in med OpenRouter igen under Inställningar.");
+  if (res.status === 402) throw new Error("Slut på krediter hos OpenRouter. Fyll på på openrouter.ai/credits.");
+  if (res.status === 429) throw new Error("För många förfrågningar just nu. Vänta en minut och försök igen.");
+  if (!res.ok) throw new Error(`OpenRouter svarade med fel (${res.status}). Försök igen.`);
+  const data = (await res.json()) as { choices?: { message?: { content?: string; refusal?: string } }[] };
+  const msg = data.choices?.[0]?.message;
+  if (msg?.refusal) throw new Error("Coachen kunde inte svara på det här. Försök formulera om.");
+  const raw = (msg?.content ?? "").replace(/^```(?:json)?\s*|\s*```$/g, "");
+  try {
+    return schema.parse(JSON.parse(raw)) as z.infer<T>;
+  } catch {
+    throw new Error("Coachen gav ett svar som inte gick att läsa. Försök igen.");
   }
 }
 
