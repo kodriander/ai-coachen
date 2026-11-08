@@ -103,7 +103,11 @@ export interface Profile {
 export interface Settings {
   apiKey: string;
   /** Var nyckeln kommer ifrån: egen Claude-nyckel eller inloggning via OpenRouter. */
-  provider: "anthropic" | "openrouter";
+  provider: "anthropic" | "openrouter" | "chatgpt";
+  /** Modell när ChatGPT-planen används (från OpenAI:s lista). */
+  chatgptModel?: string;
+  /** Kod som kopplar mobilen till den lokala servern på datorn. */
+  serverToken?: string;
   model: string;
   startDate: string;
   benchTestKg: number;
@@ -118,6 +122,9 @@ export interface AppState {
 }
 
 const KEY = "ai-coachen:v1";
+
+/** Har coachen något att svara med (nyckel eller ChatGPT-inloggning)? */
+export const hasCoach = (s: AppState) => !!s.settings.apiKey || s.settings.provider === "chatgpt";
 
 export function todayISO(d = new Date()): string {
   const off = d.getTimezoneOffset();

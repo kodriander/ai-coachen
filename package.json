@@ -3,9 +3,11 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Låt AI:n coacha din träning och kost i 7 dagar. Öppen källkod, din egen Claude API-nyckel, all data lokalt.",
+  "description": "Låt AI:n coacha din träning och kost i 7 dagar. Öppen källkod, din ChatGPT-plan eller egen nyckel, all data lokalt.",
   "license": "MIT",
   "scripts": {
+    "start": "vite build && node server/server.mjs",
+    "serve": "node server/server.mjs",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
@@ -13,6 +15,8 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.6.0",
+    "@types/qrcode": "^1.5.5",
+    "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "zod": "^4.6.7"

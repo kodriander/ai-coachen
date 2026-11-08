@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { pendingLogin as openRouterLogin, startOpenRouterLogin } from "../openrouter";
 import { MODELS } from "../ai";
-import { type AppState, getState, replaceState, resetAll, setState, useApp } from "../store";
+import { type AppState, getState, hasCoach, replaceState, resetAll, setState, useApp } from "../store";
+import { useLocal } from "../local";
+import ChatGPTCard from "./ChatGPTCard";
 import { Icon, type Go } from "../ui";
 
 export default function Inst({ go }: { go: Go }) {
   const s = useApp();
-  const firstRun = !s.settings.apiKey;
+  const firstRun = !hasCoach(s);
+  const local = useLocal();
+  const viaGPT = s.settings.provider === "chatgpt";
   const [key, setKey] = useState(s.settings.apiKey);
   const [showGuide, setShowGuide] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -62,7 +66,9 @@ export default function Inst({ go }: { go: Go }) {
       </div>
       {firstRun && <p className="lead">Logga in så att coachen kan svara, och berätta lite om dig. Allt sparas bara i den här webbläsaren.</p>}
 
-      <div className="small muted" style={{ margin: "22px 8px 6px" }}>Koppla in coachen</div>
+      <ChatGPTCard />
+
+      <div className="small muted" style={{ margin: "22px 8px 6px" }}>{local ? "Eller använd en nyckel" : "Koppla in coachen"}</div>
       {viaOR ? (
         <div className="glass card" style={{ marginTop: 0, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
           <span style={{ fontSize: 15 }}>Inloggad med OpenRouter</span>
@@ -83,11 +89,11 @@ export default function Inst({ go }: { go: Go }) {
             <input className="field" type="password" autoComplete="off" value={key} placeholder="sk-ant-…" onChange={(e) => setKey(e.target.value)} onBlur={() => { if (!firstRun) { sett("apiKey", key.trim()); sett("provider", "anthropic"); } }} style={{ width: 150 }} />
           </label>
         )}
-        <label className="row">Modell
+        {!viaGPT && <label className="row">Modell
           <select className="field" value={s.settings.model} onChange={(e) => sett("model", e.target.value)}>
             {MODELS.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
-        </label>
+        </label>}
         <label className="row">Dag 1 var
           <input className="field" type="date" value={s.settings.startDate} onChange={(e) => e.target.value && sett("startDate", e.target.value)} style={{ width: 150 }} />
         </label>
@@ -95,7 +101,7 @@ export default function Inst({ go }: { go: Go }) {
           <span style={{ display: "flex", alignItems: "baseline", gap: 4 }}><input className="field" inputMode="decimal" value={String(s.settings.benchTestKg).replace(".", ",")} onChange={(e) => { const n = numOrNull(e.target.value); if (n != null) sett("benchTestKg", n); }} style={{ width: 60 }} /><span className="small muted">kg</span></span>
         </label>
       </div>
-      {!viaOR && <p className="small muted" style={{ margin: "8px 8px 0", lineHeight: 1.5 }}>
+      {!viaOR && !viaGPT && <p className="small muted" style={{ margin: "8px 8px 0", lineHeight: 1.5 }}>
         Har du redan ett konto hos Claude? Skapa en nyckel på <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noreferrer">platform.claude.com</a>. Du betalar själv för det du använder. Opus 5.5 ger bäst coachning, Haiku 5.5 är billigast.
       </p>}
 
@@ -156,7 +162,7 @@ export default function Inst({ go }: { go: Go }) {
         </>
       )}
 
-      <p className="small muted" style={{ margin: "16px 8px 0", lineHeight: 1.5 }}>Nyckeln och all data sparas bara i den här webbläsaren och skickas bara till Claude (via OpenRouter om du loggat in där). Det här är inte medicinsk rådgivning. Värm alltid upp och lyssna på kroppen.</p>
+      <p className="small muted" style={{ margin: "16px 8px 0", lineHeight: 1.5 }}>Nyckeln och all data sparas bara i den här webbläsaren och skickas bara till AI:n du valt (Claude, via OpenRouter, eller ChatGPT via din dator). Det här är inte medicinsk rådgivning. Värm alltid upp och lyssna på kroppen.</p>
 
       {firstRun && key.trim() && (
         <div className="dock">

@@ -14,6 +14,7 @@ import {
   workoutVolume,
 } from "./store";
 import { openRouterModel } from "./openrouter";
+import { localJson } from "./local";
 
 export const MODELS = [
   { id: "claude-opus-5-5", name: "Claude Opus 5.5" },
@@ -40,6 +41,7 @@ async function ask<T extends z.ZodType>(
   effort: "low" | "medium" | "high" = "medium",
 ): Promise<z.infer<T>> {
   const model = s.settings.model || "claude-opus-5-5";
+  if (s.settings.provider === "chatgpt") return askChatGPT(s, schema, content, effort);
   if (s.settings.provider === "openrouter") return askOpenRouter(s, schema, content, model);
   // Haiku har ingen fallback på servern; övriga modeller får fallback om en förfrågan nekas.
   const withFallback = !model.startsWith("claude-haiku");
@@ -60,6 +62,40 @@ async function ask<T extends z.ZodType>(
     if (e instanceof Anthropic.RateLimitError) throw new Error("För många förfrågningar just nu. Vänta en minut och försök igen.");
     if (e instanceof Anthropic.APIConnectionError) throw new Error("Ingen kontakt med Claude. Kolla internet och försök igen.");
     throw e;
+  }
+}
+
+// Via din ChatGPT-plan: appen frågar den lokala servern på datorn, som har inloggningen.
+async function askChatGPT<T extends z.ZodType>(
+  s: AppState,
+  schema: T,
+  content: Anthropic.Beta.Messages.BetaContentBlockParam[] | string,
+  effort: "low" | "medium" | "high",
+): Promise<z.infer<T>> {
+  const parts =
+    typeof content === "string"
+      ? [{ type: "input_text", text: content }]
+      : content.map((b) =>
+          b.type === "image" && b.source.type === "base64"
+            ? { type: "input_image", image_url: `data:${b.source.media_type};base64,${b.source.data}` }
+            : { type: "input_text", text: b.type === "text" ? b.text : "" },
+        );
+  const { $schema: _drop, ...jsonSchema } = z.toJSONSchema(schema, { target: "draft-7" }) as Record<string, unknown>;
+  const res = await localJson<{ text?: string; refusal?: boolean }>("api/chatgpt/respond", {
+    method: "POST",
+    body: JSON.stringify({
+      model: s.settings.chatgptModel || undefined,
+      instructions: SYSTEM,
+      input: [{ role: "user", content: parts }],
+      text: { format: { type: "json_schema", name: "svar", strict: true, schema: jsonSchema } },
+      reasoning: { effort },
+    }),
+  });
+  if (res.refusal) throw new Error("Coachen kunde inte svara på det här. Försök formulera om.");
+  try {
+    return schema.parse(JSON.parse(res.text ?? "")) as z.infer<T>;
+  } catch {
+    throw new Error("Coachen gav ett svar som inte gick att läsa. Försök igen.");
   }
 }
 
